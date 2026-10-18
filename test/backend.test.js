@@ -224,3 +224,14 @@ test("garbage request does not crash", () => {
   assert.equal(g.callRaw("not json").code, "BAD_REQUEST");
   assert.equal(g.call("nope", T, "x", {}).code, "BAD_ACTION");
 });
+
+test("import: records whose id starts with NEW get the next free numbers, nothing existing is touched", () => {
+  const g = mk();
+  g.call("importBulk", A, "Ameen", { data: { projects: { "WA-001": { id: "WA-001", name: "Existing", client: "Keep me" }, "WA-002": { id: "WA-002", name: "Existing 2" } } } });
+  const r = g.call("importBulk", A, "Ameen", { data: { projects: { "NEW-1": { name: "Fresh A" }, "NEW-2": { name: "Fresh B", types: ["Interior"] } } } });
+  assert.equal(r.counts.projects.created, 2); assert.equal(r.counts.projects.updated, 0);
+  const all = g.call("loadAll", A, "Ameen", {}).data.projects;
+  assert.deepEqual(Object.keys(all).sort(), ["WA-001", "WA-002", "WA-003", "WA-004"]);
+  assert.equal(all["WA-001"].client, "Keep me"); assert.equal(all["WA-003"].name, "Fresh A"); assert.deepEqual(all["WA-004"].types, ["Interior"]);
+  assert.equal(g.call("create", A, "Ameen", { collection: "projects", id: "t", fields: { name: "Next" } }).id, "WA-005");
+});

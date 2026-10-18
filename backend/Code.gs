@@ -483,6 +483,7 @@ function importBulk_(ctx, p) {
     var created = 0, updated = 0;
     list.forEach(function (rec) {
       var id = String(rec.id);
+      if (/^NEW/i.test(id) && COLLECTIONS[col].prefix) id = nextId_(col, rd);   // "NEW-1" in a file means: give it the next free number
       var ex = byId[id] || null;
       var obj = ex ? JSON.parse(JSON.stringify(ex.obj)) : {};
       Object.keys(rec).forEach(function (k) { if (k !== 'updatedBy' && k !== 'syncAt' && k !== 'pinHash' && k !== 'hasPin') obj[k] = rec[k]; });
