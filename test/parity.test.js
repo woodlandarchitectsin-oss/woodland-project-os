@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
-const { start, openDevice } = require("./harness");
+const { start, openDevice, signIn } = require("./harness");
 
 const { makeData, NOW, ORIGINAL, HAVE } = require("./data");
 
@@ -27,6 +27,7 @@ const EXTRACT = () => {
     UI.view = v; render(true);
     const m = document.getElementById("main").cloneNode(true);
     m.querySelectorAll(".syncline").forEach((e) => e.remove());
+    m.querySelectorAll('[data-act="setPin"]').forEach((b) => { if (b.previousElementSibling) b.previousElementSibling.remove(); b.remove(); });   // PIN controls are new
     const controls = [...m.querySelectorAll("input,select,textarea")].map((e) => e.value);
     out.views[v] = { text: m.innerText.replace(/\s+/g, " ").trim(), controls };
   }
@@ -67,8 +68,7 @@ test("original file vs new app: identical results on identical data (5 data sets
         const page = await ctx.newPage();
         await page.clock.setFixedTime(new Date(NOW));
         await page.goto(h.url);
-        await page.fill("#pinInput", h.TEAM); await page.click("#pinForm button");
-        await page.waitForSelector("#whoForm"); await page.fill("#whoInput", "Ameen"); await page.click("#whoForm button:not([type=button])");
+        await signIn(page, h, "Ameen");
         await page.waitForFunction(() => S.loaded && Object.keys(S.projects).length > 30);
         await page.evaluate(async (pin) => { await Sync.setMeta({ adminPin: pin }); AUTH.admin = true; render(true); }, h.ADMIN);   // old file == admin of everything
         const b = await page.evaluate(EXTRACT);

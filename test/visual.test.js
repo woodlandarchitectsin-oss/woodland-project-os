@@ -7,7 +7,7 @@ const path = require("path");
 const { chromium } = require("playwright");
 const { PNG } = require("pngjs");
 const pixelmatch = require("pixelmatch");
-const { start } = require("./harness");
+const { start, signIn } = require("./harness");
 const { makeData, NOW, ORIGINAL, HAVE } = require("./data");
 
 const OUT = path.join(__dirname, "screenshots");
@@ -42,8 +42,7 @@ test("old file vs new app: screenshots match (390 / 1280 px, light / dark)", { s
       const nctx = await browser.newContext({ ...opts, serviceWorkers: "block" });
       const np = await nctx.newPage(); await np.clock.setFixedTime(new Date(NOW));
       await np.goto(h.url);
-      await np.fill("#pinInput", h.TEAM); await np.click("#pinForm button");
-      await np.waitForSelector("#whoForm"); await np.fill("#whoInput", "Ameen"); await np.click("#whoForm button:not([type=button])");
+      await signIn(np, h, "Ameen");
       await np.waitForFunction(() => S.loaded && Object.keys(S.projects).length > 30);
       await np.evaluate(async (pin) => { await Sync.setMeta({ adminPin: pin }); AUTH.admin = true; render(true); }, h.ADMIN);
       await np.addStyleTag({ content: ".syncline{display:none!important}" });      // the only intended addition to the layout

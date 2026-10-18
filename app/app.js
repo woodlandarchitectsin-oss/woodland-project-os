@@ -41,7 +41,7 @@ const UI={view:"today",pv:"active",tv:"my",tperson:"",tproject:"",pfil:{lc:"",ty
 let pendingRender=false,lastView=null;
 
 /* ---- who is using this device ---- */
-const AUTH={need:"pin",admin:false,user:"",err:"",people:[],busy:false};
+const AUTH={need:"login",admin:false,user:"",err:"",busy:false};
 const me=()=>AUTH.user||owner();
 const isAdmin=()=>AUTH.admin;
 const planKey=()=>me()===owner()?today():today()+"~"+me();
@@ -55,7 +55,7 @@ function loadSnapshot(d){COLS.forEach(c=>{S[c]=(d&&d[c])||{};});S.settings={...D
 function clean(o){const r={};Object.keys(o).forEach(k=>{if(o[k]!==null&&o[k]!==undefined&&k!=="updatedBy")r[k]=o[k];});return r;}
 
 /* ---- local change -> queued operation (only the fields that changed) ---- */
-const SKIP_DIFF={id:1,history:1,updatedAt:1,updatedBy:1,syncAt:1};
+const SKIP_DIFF={id:1,history:1,updatedAt:1,updatedBy:1,syncAt:1,hasPin:1,pinHash:1};
 const emptyV=v=>v===null||v===undefined||v==="";
 function diffFields(old,obj){
   const f={};
@@ -120,7 +120,7 @@ function remap(col,tmp,real){
   Sync.saveState();render();
 }
 function ensureMe(){
-  if(!AUTH.user||!S.loaded||AUTH.need!=="ok")return;
+  if(!AUTH.user||!S.loaded||AUTH.need!=="ok"||!isAdmin())return;
   const n=AUTH.user.toLowerCase();
   if(!Object.values(S.people).some(p=>String(p.name).toLowerCase()===n)&&!Sync.outbox().some(o=>o.collection==="people"&&o.action==="create"&&o.fields&&String(o.fields.name).toLowerCase()===n))put("people",tempId(),{name:AUTH.user,role:"",capacity:6});
 }
@@ -133,7 +133,7 @@ function rejected(op,msg){
   toast(msg);
   if(op.action==="create"&&S[op.collection])delete S[op.collection][op.id];
 }
-function authFailed(){Sync.setMeta({teamPin:"",adminPin:""});AUTH.admin=false;AUTH.need="pin";AUTH.err="The PIN was not accepted. Ask Ameen for the current PIN.";render(true);}
+function authFailed(){Sync.setMeta({teamPin:"",adminPin:""});AUTH.admin=false;gateKey="";AUTH.need="login";AUTH.err="Your PIN was not accepted. Ask Ameen for your PIN.";render(true);}
 function netDown(){if(!S.loaded){UI.loadErr=true;render(true);}}
 const HANDLERS={snapshot,applyRemote,applySettings,replaceAll,applyChanges,remap,setStatus,rejected,authFailed,netDown,toast:t=>toast(t),importDone:c=>importDone(c)};
 
@@ -145,7 +145,7 @@ async function boot(){
   const m=init.meta||{};
   if(init.state){loadSnapshot(init.state);applyPending(null);S.loaded=true;}
   AUTH.user=m.user||"";AUTH.admin=!!m.adminPin;
-  AUTH.need=!m.teamPin?"pin":!m.user?"who":"ok";
+  AUTH.need=(!m.teamPin&&!m.adminPin)||!m.user?"login":"ok";
   MODE="shared";
   render(true);
   if(AUTH.need==="ok")Sync.start();
@@ -541,10 +541,10 @@ function meetingRow(m){return `<div class="row clk" data-act="editMeeting" data-
 /* ---------------- TEAM ---------------- */
 function vTeam(){
   const ppl=Object.values(S.people).filter(p=>!p.archived);
-  let h=header("Team","Tap a name or role to edit",`<button class="btn pri" data-act="newPerson">+ Member</button>`);
+  let h=header("Team",isAdmin()?"Tap a name or role to edit":"Your team",isAdmin()?`<button class="btn pri" data-act="newPerson">+ Member</button>`:"");
   h+=`<section class="sec" style="margin-bottom:14px"><h3>Workload · next 5 days</h3>${ppl.map(p=>{const ts=Object.values(S.tasks).filter(t=>isOpenT(t)&&t.assignee===p.name);const mins=ts.reduce((a,t)=>a+(Number(t.est)||60),0);const cap=(Number(p.capacity)||6)*300;const pct=Math.round(mins/cap*100);return `<div class="cap"><b>${esc(p.name)}</b><div class="bar"><i class="${pct>100?"over":""}" style="width:${Math.min(100,pct)}%"></i></div><span class="num ${pct>100?"p0":""}">${dur(mins)||"0m"} · ${pct}%</span></div>`;}).join("")||'<div class="empty">No team members yet.</div>'}</section>`;
   h+=`<div class="stack">${ppl.map(p=>{const ts=Object.values(S.tasks).filter(t=>isOpenT(t)&&t.assignee===p.name).sort((a,b)=>taskScore(b)-taskScore(a));
-    return `<details class="sec" data-sec="team:${p.id}" ${isOpenSec("team:"+p.id)?"open":""}><summary>${esc(p.name)}<span class="cnt">${ts.length} open</span></summary><div class="fields"><label class="fld"><span>Name</span>${ed("people",p.id,"name",p.name)}</label><label class="fld"><span>Role</span>${ed("people",p.id,"role",p.role)}</label><label class="fld"><span>Focused hours / day</span>${ed("people",p.id,"capacity",p.capacity,{type:"number"})}</label><label class="fld"><span>Contact</span>${ed("people",p.id,"contact",p.contact,{ph:"—"})}</label></div>${ts.map(t=>taskRow(t)).join("")}${isAdmin()?`<div class="toolbar" style="padding:8px 16px;margin:0"><button class="btn ghost sm" data-act="removePerson" data-id="${p.id}">Remove from team</button></div>`:""}</details>`;}).join("")}</div>`;
+    return `<details class="sec" data-sec="team:${p.id}" ${isOpenSec("team:"+p.id)?"open":""}><summary>${esc(p.name)}<span class="cnt">${ts.length} open</span></summary><div class="fields"><label class="fld"><span>Name</span>${edA("people",p.id,"name",p.name)}</label><label class="fld"><span>Role</span>${edA("people",p.id,"role",p.role)}</label><label class="fld"><span>Focused hours / day</span>${edA("people",p.id,"capacity",p.capacity,{type:"number"})}</label><label class="fld"><span>Contact</span>${edA("people",p.id,"contact",p.contact,{ph:"—"})}</label></div>${ts.map(t=>taskRow(t)).join("")}${isAdmin()?`<div class="toolbar" style="padding:8px 16px;margin:0"><span class="hint">${p.hasPin?"Has their own PIN":"No PIN yet — cannot sign in"}</span><button class="btn sm" data-act="setPin" data-id="${p.id}">${p.hasPin?"Change PIN":"Set PIN"}</button><button class="btn ghost sm" data-act="removePerson" data-id="${p.id}">Remove from team</button></div>`:""}</details>`;}).join("")}</div>`;
   return h;
 }
 
@@ -621,7 +621,7 @@ function vData(){
     <label class="fld full"><span>Protected time — one per line, like “13:00-14:00 Lunch + Dhuhr”</span><textarea class="ed" id="s-fixed" rows="4" data-set="fixed">${esc(st.fixed)}</textarea></label>
   </div></section>
   <section class="sec"><h3>This device</h3><div class="body stack">
-    <div class="toolbar" style="margin:0"><span>Signed in as <b>${esc(AUTH.user)}</b></span><button class="btn sm" data-act="changeUser">Not you? Change name</button></div>
+    <div class="toolbar" style="margin:0"><span>Signed in as <b>${esc(AUTH.user)}</b></span><button class="btn sm" data-act="changeUser">Sign out</button></div>
     <div class="toolbar" style="margin:0"><span>${isAdmin()?"Admin is unlocked on this device.":"Admin is locked on this device."}</span>${isAdmin()?'<button class="btn sm" data-act="adminLock">Lock admin</button>':'<button class="btn sm" data-act="adminUnlock">Unlock admin</button>'}</div>
   </div></section>
   <section class="sec"><h3>Backup</h3><div class="body stack">
@@ -945,28 +945,42 @@ function legacyUpload(){
 let gateKey="";
 function renderGate(){
   const g=document.getElementById("gate");if(!g)return;
-  const key=AUTH.need+"|"+AUTH.err+"|"+(AUTH.people||[]).join(",")+"|"+AUTH.busy;
+  const key=AUTH.need+"|"+AUTH.err+"|"+AUTH.busy;
   if(AUTH.need==="ok"){g.innerHTML="";g.hidden=true;gateKey="";return;}
   g.hidden=false;if(key===gateKey)return;gateKey=key;
-  if(AUTH.need==="pin")g.innerHTML=`<form class="gatebox" id="pinForm"><div class="brand2"><b>WOODLAND</b><span>Project OS</span></div><h2>Enter the team PIN</h2><p class="hint">Ask Ameen for the PIN. You only need it once on this phone.</p><input type="password" id="pinInput" inputmode="numeric" autocomplete="off" placeholder="PIN" aria-label="Team PIN" ${AUTH.busy?"disabled":""}>${AUTH.err?`<div class="banner" role="alert">${esc(AUTH.err)}</div>`:""}<button class="btn pri" ${AUTH.busy?"disabled":""}>${AUTH.busy?"Checking…":"Continue"}</button></form>`;
-  else g.innerHTML=`<form class="gatebox" id="whoForm"><div class="brand2"><b>WOODLAND</b><span>Project OS</span></div><h2>Who are you?</h2><p class="hint">Tap your name, or type it. Your changes are recorded under this name.</p><div class="togs">${(AUTH.people||[]).map(n=>`<button type="button" class="chip" data-act="pickUser" data-v="${esc(n)}">${esc(n)}</button>`).join("")}</div><input type="text" id="whoInput" autocomplete="off" placeholder="Or type your name" aria-label="Your name"><button class="btn pri">Continue</button></form>`;
-  const f=g.querySelector("input");if(f&&!f.disabled)setTimeout(()=>f.focus(),30);
+  const last=(Sync.meta&&Sync.meta().user)||"";
+  g.innerHTML=`<form class="gatebox" id="loginForm"><div class="brand2"><b>WOODLAND</b><span>Project OS</span></div><h2>Sign in</h2><p class="hint">Type your name and your own PIN. Ask Ameen if you don't have one. You only do this once on this phone.</p><input type="text" id="nameInput" autocomplete="off" autocapitalize="words" placeholder="Your name" aria-label="Your name" value="${esc(last)}" ${AUTH.busy?"disabled":""}><input type="password" id="pinInput" inputmode="numeric" autocomplete="off" placeholder="Your PIN" aria-label="Your PIN" ${AUTH.busy?"disabled":""}>${AUTH.err?`<div class="banner" role="alert">${esc(AUTH.err)}</div>`:""}<button class="btn pri" ${AUTH.busy?"disabled":""}>${AUTH.busy?"Checking…":"Sign in"}</button></form>`;
+  const f=g.querySelector(last?"#pinInput":"#nameInput");if(f&&!f.disabled)setTimeout(()=>f.focus(),30);
 }
-async function submitPin(pin){
-  pin=String(pin||"").trim();if(!pin)return;
+async function submitLogin(name,pin){
+  name=String(name||"").trim();pin=String(pin||"").trim();
+  if(!name||!pin){AUTH.err="Type your name and your PIN.";gateKey="";renderGate();return;}
+  if(!window.WPOS_CONFIG||!window.WPOS_CONFIG.API_URL){AUTH.err="This app is not connected to its server yet.";gateKey="";renderGate();return;}
   AUTH.busy=true;AUTH.err="";renderGate();
   try{
-    const r=await Sync.api("hello",{},{pin});
+    const r=await Sync.api("hello",{},{pin,by:name});
     AUTH.busy=false;
-    if(r&&r.ok){await Sync.setMeta({teamPin:pin,adminPin:r.admin?pin:""});AUTH.admin=!!r.admin;AUTH.people=(r.people||[]).map(p=>p.name);AUTH.need=Sync.meta().user?"ok":"who";AUTH.err="";render(true);if(AUTH.need==="ok")Sync.start();}
-    else{AUTH.err=(r&&r.error)||"That PIN was not accepted.";gateKey="";renderGate();}
+    if(r&&r.ok){
+      await Sync.setMeta({teamPin:pin,adminPin:r.admin?pin:"",user:r.name||name});
+      AUTH.user=r.name||name;AUTH.admin=!!r.admin;AUTH.need="ok";AUTH.err="";
+      render(true);Sync.start();
+    }else{AUTH.err=(r&&r.error)||"That name and PIN were not accepted.";gateKey="";renderGate();}
   }catch(e){AUTH.busy=false;AUTH.err="Couldn't reach the server. Check the internet.";gateKey="";renderGate();}
 }
-async function chooseUser(name){
-  name=String(name||"").trim().slice(0,60);if(!name){toast("Type your name");return;}
-  const match=(AUTH.people||[]).find(n=>n.toLowerCase()===name.toLowerCase());
-  AUTH.user=match||name;await Sync.setMeta({user:AUTH.user});
-  if(AUTH.need==="who")startAfterGate();else{AUTH.need="ok";render(true);ensureMe();}
+async function signOut(){
+  if(Sync.outbox().length){toast("Wait until your changes are saved ("+Sync.outbox().length+" waiting), then sign out.");return;}
+  await Sync.setMeta({teamPin:"",adminPin:"",user:""});await Sync.resetSync();
+  COLS.forEach(c=>{S[c]={};});S.loaded=false;Sync.saveState();
+  AUTH.user="";AUTH.admin=false;AUTH.need="login";AUTH.err="";gateKey="";render(true);
+}
+// Admin: give a person their own PIN (or clear it to switch their login off)
+function setPinFor(id){
+  const p=S.people[id];if(!p)return;
+  openModal("PIN for "+p.name,[{k:"pin",label:"New PIN (4 to 8 digits). Leave empty to switch this person's login off.",type:"password",full:1}],v=>{
+    const pin=v.pin==null?"":String(v.pin);
+    if(pin&&!/^\d{4,8}$/.test(pin)){toast("A PIN must be 4 to 8 digits.");return false;}
+    Sync.enqueue({action:"setPin",data:{name:p.name,pin}});toast(pin?"PIN saved for "+p.name:"Login switched off for "+p.name);
+  },"Save PIN");
 }
 function adminRow(){return `<div class="row clk" data-act="${isAdmin()?"adminLock":"adminUnlock"}">${ICON.data}<div class="grow"><div class="t">Admin</div><div class="s">${isAdmin()?"Unlocked on this device · tap to lock":"Locked · enter the admin PIN for fees, payments, archive, delete, import"}</div></div><span class="hint">›</span></div>`;}
 function adminUnlock(){
@@ -1017,7 +1031,7 @@ document.addEventListener("click",e=>{
     case "editMeeting":meetingForm(S.meetings[id]);break;
     case "newPayment":paymentForm(el.dataset.pid);break;
     case "delPayment":confirmBox("Delete this payment entry?","Delete",()=>{const x=S.payments[id];remove("payments",id);const p=S.projects[x?.projectId];if(p){const pp=clone(p);log(pp,"Payment entry removed "+money(x.amount));put("projects",pp.id,pp);}});break;
-    case "newPerson":openModal("New team member",[{k:"name",label:"Name"},{k:"role",label:"Role",ph:"Draughtsman, 3D artist, site engineer"},{k:"capacity",label:"Focused hours / day",type:"number",value:6}],v=>{if(!v.name){toast("Enter a name");return false;}const pid=nextId("people","P-",3);put("people",pid,{...v,id:pid});},"Add");break;
+    case "newPerson":openModal("New team member",[{k:"name",label:"Name"},{k:"role",label:"Role",ph:"Draughtsman, 3D artist, site engineer"},{k:"capacity",label:"Focused hours / day",type:"number",value:6},{k:"pin",label:"Their own PIN (4 to 8 digits)",type:"password"}],v=>{if(!v.name){toast("Enter a name");return false;}const pin=v.pin==null?"":String(v.pin);if(pin&&!/^\d{4,8}$/.test(pin)){toast("A PIN must be 4 to 8 digits.");return false;}if(Object.values(S.people).some(x=>!x.archived&&String(x.name).toLowerCase()===v.name.toLowerCase())){toast(v.name+" is already on the team.");return false;}const pid=nextId("people","P-",3);const o={...v,id:pid};delete o.pin;put("people",pid,o);if(pin)Sync.enqueue({action:"setPin",data:{name:v.name,pin}});toast(pin?v.name+" added with their own PIN":v.name+" added. Set a PIN so they can sign in.");},"Add");break;
     case "removePerson":{const p=S.people[id];confirmBox(`Remove ${p.name} from the team? Their tasks stay assigned until you change them.`,"Remove",()=>put("people",id,{...clone(p),archived:true}));break;}
     case "closeModal":closeModal();break;
     case "modalExtra":MODAL&&MODAL.extra.fn();break;
@@ -1038,8 +1052,8 @@ document.addEventListener("click",e=>{
     case "followedP":{const p=clone(S.projects[id]);p.waitingSince=today();log(p,"Client followed up");put("projects",id,p);toast("Follow-up logged");break;}
     case "cmdApply":{const acts=UI.cmdOut.actions;UI.cmdOut=null;UI.gq="";applyActions(acts);break;}
     case "retry":UI.loadErr=false;render(true);Sync.tick(true);break;
-    case "changeUser":AUTH.need="who";AUTH.people=Object.values(S.people).filter(p=>!p.archived).map(p=>p.name);gateKey="";render(true);break;
-    case "pickUser":chooseUser(el.dataset.v);break;
+    case "changeUser":signOut();break;
+    case "setPin":setPinFor(id);break;
     case "adminUnlock":adminUnlock();break;
     case "adminLock":adminLock();break;
     case "legacyUpload":legacyUpload();break;
@@ -1082,8 +1096,7 @@ document.addEventListener("focusout",()=>{if(pendingRender)setTimeout(()=>{if(pe
 document.addEventListener("submit",async e=>{
   e.preventDefault();const f=e.target;
   if(f.id==="modalForm"&&MODAL){const r=await MODAL.onSubmit(readModal());if(r!==false)closeModal();return;}
-  if(f.id==="pinForm"){submitPin(document.getElementById("pinInput").value);return;}
-  if(f.id==="whoForm"){chooseUser(document.getElementById("whoInput").value);return;}
+  if(f.id==="loginForm"){submitLogin(document.getElementById("nameInput").value,document.getElementById("pinInput").value);return;}
   if(f.id==="omni"){const q=document.getElementById("gsearch").value.trim();if(q&&CAP.sample)runCommand(q);return;}
   if(f.dataset.quick!==undefined){
     const pid=f.dataset.quick||document.getElementById("qa-proj")?.value;const inp=f.querySelector('input[type="text"]');const title=inp.value.trim();

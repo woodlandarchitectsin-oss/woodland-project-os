@@ -72,7 +72,7 @@
     var body = JSON.stringify({
       action: action,
       pin: opts.pin !== undefined ? opts.pin : (meta.adminPin || meta.teamPin),
-      by: meta.user || "",
+      by: opts.by !== undefined ? opts.by : (meta.user || ""),
       payload: payload || {}
     });
     var ctl = typeof AbortController !== "undefined" ? new AbortController() : null;

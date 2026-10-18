@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
-const { start } = require("./harness");
+const { start, signIn } = require("./harness");
 
 let browser;
 test.before(async () => { browser = await chromium.launch(); });
@@ -30,8 +30,7 @@ test("service worker registers, Chrome reports no install problems, and the app 
     const ctx = await browser.newContext({ viewport: { width: 390, height: 800 } });
     const page = await ctx.newPage();
     await page.goto(h.url);
-    await page.fill("#pinInput", h.TEAM); await page.click("#pinForm button");
-    await page.waitForSelector("#whoForm"); await page.fill("#whoInput", "Ameen"); await page.click("#whoForm button:not([type=button])");
+    await signIn(page, h, "Ameen");
     await page.waitForFunction(() => S.loaded && Object.keys(S.projects).length === 1);
     const reg = await page.evaluate(async () => { const r = await navigator.serviceWorker.ready; return { scope: r.scope, active: !!r.active }; });
     assert.ok(reg.active); assert.match(reg.scope, /127\.0\.0\.1/);
@@ -62,8 +61,7 @@ test("a new version shows 'New version — tap to refresh' and the tap switches 
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await page.goto(h.url);
-    await page.fill("#pinInput", h.TEAM); await page.click("#pinForm button");
-    await page.waitForSelector("#whoForm"); await page.fill("#whoInput", "Ameen"); await page.click("#whoForm button:not([type=button])");
+    await signIn(page, h, "Ameen");
     await page.waitForFunction(() => S.loaded);
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.reload(); await page.waitForFunction(() => navigator.serviceWorker.controller);

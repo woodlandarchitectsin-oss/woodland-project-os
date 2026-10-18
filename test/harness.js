@@ -4,13 +4,14 @@ const fs = require("fs");
 const path = require("path");
 const { createGas } = require("./gas-mock");
 
-const TEAM = "1234", ADMIN = "987654";
+const STAFF = "2468", ADMIN = "987654";   // STAFF is the personal PIN every test person gets
+const TEAM = STAFF;
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png" };
 
 function listen(server) { return new Promise((res) => server.listen(0, "127.0.0.1", () => res(server.address().port))); }
 
 async function start(opts = {}) {
-  const gas = createGas({ props: { TEAM_PIN: TEAM, ADMIN_PIN: ADMIN } });
+  const gas = createGas({ props: { ADMIN_PIN: ADMIN } });
   const state = { down: false, latency: 0, calls: [], hold: null };
   const api = http.createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -46,12 +47,27 @@ async function start(opts = {}) {
   });
   const webPort = await listen(web);
   return {
-    gas, state, TEAM, ADMIN,
+    gas, state, TEAM: STAFF, STAFF, ADMIN,
+    /** make sure this person exists and has a personal PIN (done as the admin, like Ameen does in the Team screen) */
+    ensureStaff(name) {
+      const people = gas.call("loadAll", ADMIN, "Ameen", {}).data.people;
+      if (!Object.values(people).some((p) => p.name.toLowerCase() === name.toLowerCase())) gas.call("create", ADMIN, "Ameen", { collection: "people", id: "t", fields: { name, capacity: 6 } });
+      gas.call("setPin", ADMIN, "Ameen", { data: { name, pin: STAFF } });
+    },
     url: `http://127.0.0.1:${webPort}/`,
     apiUrl: `http://127.0.0.1:${apiPort}/exec`,
     seed(data) { return gas.call("importBulk", ADMIN, "Ameen", { data }); },
     async stop() { api.closeAllConnections(); web.closeAllConnections(); api.close(); web.close(); }
   };
+}
+
+/** Fills in the real sign-in screen with this person's name and personal PIN. */
+async function signIn(page, h, name) {
+  h.ensureStaff(name);
+  await page.waitForSelector("#loginForm");
+  await page.fill("#nameInput", name);
+  await page.fill("#pinInput", h.STAFF);
+  await page.click("#loginForm button");
 }
 
 /** Opens a fresh "device" (isolated storage) and signs in through the real PIN + name screens. */
@@ -61,11 +77,7 @@ async function openDevice(browser, h, name, { admin = false, viewport } = {}) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(h.url);
-  await page.fill("#pinInput", h.TEAM);
-  await page.click("#pinForm button");
-  await page.waitForSelector("#whoForm");
-  await page.fill("#whoInput", name);
-  await page.click("#whoForm button:not([type=button])");
+  await signIn(page, h, name);
   await page.waitForFunction(() => document.getElementById("gate").hidden === true);
   await page.waitForFunction(() => S.loaded === true);
   if (admin) {
@@ -74,6 +86,6 @@ async function openDevice(browser, h, name, { admin = false, viewport } = {}) {
   return { ctx, page, errors, name };
 }
 
-module.exports = { start, openDevice, TEAM, ADMIN };
+module.exports = { start, openDevice, signIn, TEAM, STAFF, ADMIN };
 
 

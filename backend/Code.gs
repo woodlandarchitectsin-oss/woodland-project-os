@@ -3,7 +3,7 @@
  * Deploy as Web app: Execute as Me, Who has access: Anyone.
  * All calls are POST with a text/plain JSON body: {action, pin, by, payload}.
  * Data lives in a Google Sheet "Woodland Project OS — data" created on first call.
- * PINs live in Script Properties (TEAM_PIN, ADMIN_PIN) — never in this file.
+ * ADMIN_PIN lives in Script Properties (never in this file). Each team member has their own PIN, stored only as a salted hash in the People tab.
  */
 
 var SHEET_TITLE = 'Woodland Project OS — data';
@@ -14,7 +14,7 @@ var OPS_KEEP = 2000;
 var COLLECTIONS = {
   projects: { tab: 'Projects', prefix: 'WA-', width: 3, cols: ['id', 'name', 'client', 'location', 'lifecycle', 'priority', 'types', 'conditions', 'nextAction', 'nextActionOwner', 'nextActionDeadline', 'lead', 'responsible', 'team', 'quotedFee', 'agreedFee', 'openingReceived', 'paymentMilestone', 'nextPaymentDue', 'paymentStatus', 'clientContact', 'scope', 'area', 'leadSource', 'enquiryDate', 'startDate', 'targetDate', 'created', 'blocker', 'siteIssues', 'folder', 'links', 'notes', 'confirm', 'archived', 'waitingSince', 'nextMeeting', 'history'] },
   tasks: { tab: 'Tasks', prefix: 'T-', width: 4, cols: ['id', 'projectId', 'title', 'assignee', 'status', 'priority', 'due', 'est', 'category', 'created', 'completed', 'completedBy', 'clientDependency', 'dependency', 'startAfter', 'waitingSince', 'blockType', 'desc', 'notes'] },
-  people: { tab: 'People', prefix: 'P-', width: 3, cols: ['id', 'name', 'role', 'capacity', 'contact', 'archived'] },
+  people: { tab: 'People', prefix: 'P-', width: 3, cols: ['id', 'name', 'role', 'capacity', 'contact', 'archived', 'pinHash'] },
   meetings: { tab: 'Meetings', prefix: 'M-', width: 4, cols: ['id', 'projectId', 'date', 'time', 'purpose', 'participants', 'decisions', 'requests', 'payment', 'duration', 'nextMeeting'] },
   payments: { tab: 'Payments', prefix: 'PAY-', width: 4, cols: ['id', 'projectId', 'date', 'amount', 'milestone', 'mode'] },
   plans: { tab: 'Plans', prefix: '', width: 0, cols: ['id', 'taskIds', 'blocks'] },
@@ -35,18 +35,18 @@ function doPost(e) {
   var req;
   try { req = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, code: 'BAD_REQUEST', error: 'Unreadable request.' }); }
   try {
-    var role = authenticate_(req.pin);
-    if (role === 'locked') return out_({ ok: false, code: 'BAD_PIN', error: 'Too many wrong PINs. Try again in 10 minutes.' });
-    if (!role) return out_({ ok: false, code: 'BAD_PIN', error: 'Wrong PIN.' });
+    var who = authenticate_(req.pin, req.by);
+    if (who === 'locked') return out_({ ok: false, code: 'BAD_PIN', error: 'Too many wrong attempts. Try again in 10 minutes.' });
+    if (!who) return out_({ ok: false, code: 'BAD_PIN', error: 'Wrong name or PIN.' });
     ss_(); // create the sheet on first use, before any write lock is taken
-    var ctx = { role: role, by: String(req.by || '').slice(0, 60) || 'Unknown', now: new Date().toISOString(), history: [] };
+    var ctx = { role: who.role, by: who.name, now: new Date().toISOString(), history: [] };
     var p = req.payload || {};
     var res;
     switch (req.action) {
       case 'hello': res = hello_(ctx); break;
       case 'loadAll': res = loadAll_(ctx); break;
       case 'changesSince': res = changesSince_(ctx, p); break;
-      case 'save': case 'create': case 'delete': case 'archive': case 'restore': case 'importBulk':
+      case 'save': case 'create': case 'delete': case 'archive': case 'restore': case 'importBulk': case 'setPin':
         res = withLock_(function () { return write_(req.action, ctx, p); });
         break;
       default: res = { ok: false, code: 'BAD_ACTION', error: 'Unknown action.' };
@@ -62,13 +62,12 @@ function doGet() {
   return out_({ ok: true, name: 'Woodland Project OS API', note: 'Use POST.' });
 }
 
-/** Run once from the editor. Creates random PINs only if none exist, and shows them in the log. */
+/** Run once from the editor. Creates a random ADMIN_PIN only if none exists, and says so in the log. Staff PINs are set inside the app (Team screen). */
 function setPins() {
   var props = PropertiesService.getScriptProperties();
   var made = [];
-  if (!props.getProperty('TEAM_PIN')) { props.setProperty('TEAM_PIN', rndDigits_(4)); made.push('TEAM_PIN'); }
   if (!props.getProperty('ADMIN_PIN')) { props.setProperty('ADMIN_PIN', rndDigits_(6)); made.push('ADMIN_PIN'); }
-  Logger.log('Created: ' + (made.join(', ') || 'nothing (both already set)') + '. Read or change them in Project Settings > Script Properties.');
+  Logger.log('Created: ' + (made.join(', ') || 'nothing (ADMIN_PIN already set)') + '. Read or change it in Project Settings > Script Properties.');
 }
 
 function rndDigits_(n) { var s = ''; for (var i = 0; i < n; i++) s += Math.floor(Math.random() * 10); return s; }
@@ -86,18 +85,50 @@ function withLock_(fn) {
 
 /* ---------------- auth ---------------- */
 
-function authenticate_(pin) {
+/** Returns {role, name} or null, or 'locked'. The admin PIN works with any name; everyone else signs in with their own name + PIN. */
+function authenticate_(pin, by) {
   var props = PropertiesService.getScriptProperties();
-  var team = props.getProperty('TEAM_PIN'), admin = props.getProperty('ADMIN_PIN');
-  if (!team || !admin) throw fail_('NOT_SET_UP', 'PINs are not set yet. Run setPins() in the Apps Script editor.');
+  var admin = props.getProperty('ADMIN_PIN');
+  if (!admin) throw fail_('NOT_SET_UP', 'The admin PIN is not set yet. Run setPins() in the Apps Script editor.');
   var cache = CacheService.getScriptCache();
-  var fails = Number(cache.get('pinfails') || 0);
-  if (fails >= 12) return 'locked';
+  var name = String(by == null ? '' : by).trim().slice(0, 60);
+  var key = 'pf_' + name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  var nameFails = Number(cache.get(key) || 0), allFails = Number(cache.get('pinfails') || 0);
+  if (nameFails >= 8 || allFails >= 60) return 'locked';
   pin = String(pin == null ? '' : pin);
-  if (pin && pin === admin) return 'admin';
-  if (pin && pin === team) return 'team';
-  cache.put('pinfails', String(fails + 1), 600);
+  if (pin && pin === admin) return { role: 'admin', name: name || 'Admin' };
+  var person = pin && name ? findPersonForLogin_(name, pin) : null;
+  if (person) return { role: 'team', name: person };
+  cache.put(key, String(nameFails + 1), 600);
+  cache.put('pinfails', String(allFails + 1), 600);
   return null;
+}
+
+function hashPin_(id, pin) {
+  var salt = PropertiesService.getScriptProperties().getProperty('PIN_SALT') || '';
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + ':' + id + ':' + pin);
+  return bytes.map(function (b) { b = b < 0 ? b + 256 : b; return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+}
+
+/** The stored name of the active person whose own PIN this is, else null. */
+function findPersonForLogin_(name, pin) {
+  if (!PropertiesService.getScriptProperties().getProperty('SHEET_ID') || !PropertiesService.getScriptProperties().getProperty('PIN_SALT')) return null;
+  var rows = read_('people').rows;
+  for (var i = 0; i < rows.length; i++) {
+    var p = rows[i].obj;
+    if (p.archived || !p.pinHash || String(p.name).toLowerCase() !== name.toLowerCase()) continue;
+    if (p.pinHash === hashPin_(p.id, pin)) return p.name;
+  }
+  return null;
+}
+
+/** What may leave the server: never the hash, only whether a PIN exists. */
+function publicRow_(col, obj) {
+  if (col !== 'people' || !obj) return obj;
+  var o = JSON.parse(JSON.stringify(obj));
+  o.hasPin = !!o.pinHash;
+  delete o.pinHash;
+  return o;
 }
 
 /* ---------------- spreadsheet plumbing ---------------- */
@@ -235,8 +266,7 @@ function bumpCounter_(col, id) {
 
 function hello_(ctx) {
   ss_();
-  var people = read_('people').rows.map(function (r) { return r.obj; }).filter(function (p) { return !p.archived; }).map(function (p) { return { id: p.id, name: p.name }; });
-  var res = { ok: true, admin: ctx.role === 'admin', people: people, serverTime: ctx.now };
+  var res = { ok: true, admin: ctx.role === 'admin', name: ctx.by, serverTime: ctx.now };
   if (ctx.role === 'admin') res.sheetUrl = ss_().getUrl();
   return res;
 }
@@ -246,7 +276,7 @@ function loadAll_(ctx) {
   Object.keys(COLLECTIONS).forEach(function (c) {
     if (c === 'settings') return;
     var o = {};
-    read_(c).rows.forEach(function (r) { o[r.obj.id] = r.obj; });
+    read_(c).rows.forEach(function (r) { o[r.obj.id] = publicRow_(c, r.obj); });
     data[c] = o;
   });
   var st = read_('settings').rows;
@@ -261,7 +291,7 @@ function changesSince_(ctx, p) {
   if (since && lastWrite && lastWrite < since) return { ok: true, serverTime: ctx.now, changes: {}, deleted: [] };
   var changes = {};
   Object.keys(COLLECTIONS).forEach(function (c) {
-    var rows = read_(c).rows.filter(function (r) { return !since || String(r.obj.syncAt || r.obj.updatedAt || '') >= since; }).map(function (r) { return r.obj; });
+    var rows = read_(c).rows.filter(function (r) { return !since || String(r.obj.syncAt || r.obj.updatedAt || '') >= since; }).map(function (r) { return publicRow_(c, r.obj); });
     if (rows.length) changes[c] = rows;
   });
   var del = [];
@@ -289,6 +319,7 @@ function write_(action, ctx, p) {
   var res;
   if (action === 'importBulk') res = importBulk_(ctx, p);
   else if (action === 'delete') res = delete_(ctx, p);
+  else if (action === 'setPin') res = setPin_(ctx, p);
   else if (action === 'archive' || action === 'restore') res = archive_(ctx, p, action === 'archive');
   else res = saveOrCreate_(ctx, p, action === 'create');
   flushHistory_(ctx);
@@ -354,12 +385,13 @@ function saveOrCreate_(ctx, p, isCreate) {
   if (isCreate && col === 'payments') needAdmin_(ctx, 'record payments');
   if (!isCreate && !existing && col !== 'plans' && col !== 'settings') throw fail_('NOT_FOUND', 'That record no longer exists.');
   if (col === 'payments') needAdmin_(ctx, 'change payments');
+  if (col === 'people') needAdmin_(ctx, 'change team members');
 
   var base = existing ? JSON.parse(JSON.stringify(existing.obj)) : {};
   var changed = [];
   Object.keys(fields).forEach(function (k) {
     if (k === 'id' || k === 'updatedAt' || k === 'updatedBy' || k === 'syncAt') return;
-    if (k === 'history') return;
+    if (k === 'history' || k === 'pinHash' || k === 'hasPin') return;
     if (!same_(base[k], fields[k])) changed.push(k);
   });
 
@@ -393,7 +425,7 @@ function saveOrCreate_(ctx, p, isCreate) {
   }
   obj.updatedAt = ctx.now; obj.updatedBy = ctx.by; obj.syncAt = ctx.now;
   writeObj_(col, rd, existing, obj);
-  return { ok: true, id: id, row: obj };
+  return { ok: true, id: id, row: publicRow_(col, obj) };
 }
 
 function closeProblems_(proj, id) {
@@ -453,7 +485,7 @@ function importBulk_(ctx, p) {
       var id = String(rec.id);
       var ex = byId[id] || null;
       var obj = ex ? JSON.parse(JSON.stringify(ex.obj)) : {};
-      Object.keys(rec).forEach(function (k) { if (k !== 'updatedBy' && k !== 'syncAt') obj[k] = rec[k]; });
+      Object.keys(rec).forEach(function (k) { if (k !== 'updatedBy' && k !== 'syncAt' && k !== 'pinHash' && k !== 'hasPin') obj[k] = rec[k]; });
       obj.id = id;
       if (obj.history) obj.history = obj.history.slice(0, HISTORY_KEEP); // old lines keep their own (possibly empty) author
       obj.updatedAt = rec.updatedAt || ctx.now; obj.updatedBy = ctx.by; obj.syncAt = ctx.now;
@@ -465,4 +497,25 @@ function importBulk_(ctx, p) {
     logChange_(ctx, col, '*', '(import)', null, created + ' new, ' + updated + ' updated');
   });
   return { ok: true, counts: counts };
+}
+
+/** Admin sets (or clears, with an empty pin) one person's own PIN. */
+function setPin_(ctx, p) {
+  needAdmin_(ctx, 'set staff PINs');
+  var pin = String(p.data && p.data.pin != null ? p.data.pin : '');
+  if (pin && !/^\d{4,8}$/.test(pin)) throw fail_('BAD_PIN_FORMAT', 'A PIN must be 4 to 8 digits.');
+  var rd = read_('people');
+  var name = String(p.data && p.data.name || '').toLowerCase();
+  var hit = rd.rows.filter(function (r) { return String(r.obj.name).toLowerCase() === name && !r.obj.archived; })[0];
+  if (!hit) throw fail_('NOT_FOUND', 'No active team member with that name.');
+  var props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('PIN_SALT')) props.setProperty('PIN_SALT', rndDigits_(8) + rndDigits_(8) + rndDigits_(8));
+  var obj = JSON.parse(JSON.stringify(hit.obj));
+  if (pin) {
+    obj.pinHash = hashPin_(obj.id, pin);
+  } else obj.pinHash = null;
+  obj.updatedAt = ctx.now; obj.updatedBy = ctx.by; obj.syncAt = ctx.now;
+  writeObj_('people', rd, hit, obj);
+  logChange_(ctx, 'people', obj.id, 'pin', null, pin ? '(set)' : '(cleared)');
+  return { ok: true, id: obj.id, row: publicRow_('people', obj) };
 }

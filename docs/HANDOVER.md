@@ -1,12 +1,13 @@
 # Woodland Project OS — hand-over (plain English)
 
 ## 1. The link and the PINs
-App link: **https://woodlandarchitectsin-oss.github.io/woodland-project-os/**
+App link: **https://woodlandarchitectsin-oss.github.io/woodland-project-os/** (one link for everyone)
 
-PINs: open https://script.google.com/home/projects/1ZuOnpMGuprI7aYxZj0iq4DiaXGbW8TWkvE7gJCJjNilCCPYhNv84LDbJ/settings (signed in as woodlandarchitects.in@gmail.com) and look under **Script Properties**.
-- `TEAM_PIN` — give this to your team. Asked once per phone.
-- `ADMIN_PIN` — keep this to yourself. Unlocks fees, payments, archive, delete and import.
-You can change either value there at any time (staff will be asked for the new PIN).
+- **You (owner):** sign in with your name (Ameen) and the **admin PIN**. That PIN is in https://script.google.com/home/projects/1ZuOnpMGuprI7aYxZj0iq4DiaXGbW8TWkvE7gJCJjNilCCPYhNv84LDbJ/settings under Script Properties, `ADMIN_PIN` (signed in as woodlandarchitects.in@gmail.com). It also unlocks fees, payments, archive, delete and import. You can change it there any time. (`TEAM_PIN` in that list is no longer used.)
+- **Each staff member has their own PIN.** After signing in, open More, Team, **+ Member** (name, role, their PIN). For existing people use **Set PIN** on their card. Staff sign in with their name + their PIN, once per phone.
+- **Remove someone's access:** Team, their card, **Set PIN** and leave it empty (login off), or **Remove from team**. Others are not affected.
+- The server stores PINs only as a scrambled hash; nobody, including you, can read a staff PIN back. To change one, set a new one.
+- After 8 wrong tries for one name, that name is locked for 10 minutes.
 
 ## 2. Install
 - **Windows:** open the link in Chrome or Edge, click the install icon in the address bar (or the three dots, Cast / Save and share, Install page as app), then pin it to the taskbar.
@@ -21,8 +22,8 @@ The old file keeps its data in a different browser "address" than the new app, s
 
 ## 4. WhatsApp message for the team
 > Woodland Project OS is live. Open this link on your phone: https://woodlandarchitectsin-oss.github.io/woodland-project-os/
-> Chrome menu (three dots), "Add to Home screen". Team PIN: (Ameen will send it separately).
-> First time: type the PIN, then tap your name. Tick tasks done as you finish them. It works without signal and syncs when you are back online.
+> Chrome menu (three dots), "Add to Home screen".
+> First time: type your name and the personal PIN Ameen gave you. Tick tasks done as you finish them. It works without signal and syncs when you are back online.
 
 ## 5. Asking for changes later
 Open Claude Code in `D:\CLAUDE\project-os-app` and describe the change. It runs the tests, then publishes to the same link and the same back-end address.

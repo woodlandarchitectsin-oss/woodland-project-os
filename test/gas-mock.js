@@ -87,7 +87,12 @@ function createGas(opts = {}) {
       MimeType: { JSON: "json" },
       createTextOutput: (t) => ({ text: t, setMimeType() { return this; }, getContent() { return t; } })
     },
-    Utilities: { formatDate: (d, tz, f) => d.toISOString().slice(0, 10) }
+    Utilities: {
+      formatDate: (d, tz, f) => d.toISOString().slice(0, 10),
+      DigestAlgorithm: { SHA_256: "sha256" },
+      // Apps Script returns signed bytes
+      computeDigest: (alg, text) => Array.from(require("crypto").createHash(alg).update(String(text), "utf8").digest()).map((b) => (b > 127 ? b - 256 : b))
+    }
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "backend", "Code.gs"), "utf8"), sandbox, { filename: "Code.gs" });
