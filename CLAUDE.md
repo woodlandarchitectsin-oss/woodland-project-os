@@ -32,3 +32,8 @@ clasp deploy --deploymentId AKfycbxR4m5jgaS7zMm0f_L6H2Tw3SBrNpQjl_mdrc8g_xr3TfnZ
 - Personal views (Mine, Top 3, Today's plan, quick-add default) use the signed-in person (`me()`); the bottleneck banner always uses the owner setting.
 - AI command box is hidden (Phase 2, not built): server-side Anthropic call with key in Script Properties, proposals only applied after Ameen taps Apply.
 - On Windows PowerShell 5.1, never use Get-Content/Set-Content on files containing non-ASCII (it corrupts them); use node scripts.
+
+## Live
+- Repo: https://github.com/woodlandarchitectsin-oss/woodland-project-os (public, code only)
+- App link: https://woodlandarchitectsin-oss.github.io/woodland-project-os/ (served from the gh-pages branch)
+- Hand-over text for Ameen: docs/HANDOVER.md
