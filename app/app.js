@@ -336,7 +336,8 @@ function quickAdd(pid){
    RENDER
    ========================================================= */
 const TABS=[["today","Today","today"],["projects","Projects","projects"],["tasks","Tasks","tasks"],["money","Money","money"],["more","More","more",1],["follow","Follow-ups","follow",2],["meetings","Meetings","meetings",2],["team","Team","team",2],["weekly","Weekly review","weekly",2],["report","Daily report","report",2],["data","Data & settings","data",2]];
-function isTyping(){const a=document.activeElement;if(!a)return false;if(a.tagName==="TEXTAREA")return true;return a.tagName==="INPUT"&&["text","number","search"].includes(a.type)&&!a.dataset.live;}
+const partialDate=v=>/^\d{1,6}-\d{2}-\d{2}$/.test(v||"")&&+String(v).split("-")[0]<1900;   // e.g. 0002-02-01 while the year is still being typed
+function isTyping(){const a=document.activeElement;if(!a)return false;if(a.tagName==="TEXTAREA")return true;if(a.tagName==="INPUT"&&a.type==="date"&&partialDate(a.value))return true;return a.tagName==="INPUT"&&["text","number","search"].includes(a.type)&&!a.dataset.live;}
 function render(force){
   if(!force&&isTyping()){pendingRender=true;return;}
   pendingRender=false;
@@ -1071,6 +1072,7 @@ document.addEventListener("keydown",e=>{
 document.addEventListener("change",e=>{
   const el=e.target;
   if(el.dataset.ed){
+    if(el.type==="date"&&partialDate(el.value))return;   // wait until the whole year is typed
     const [col,id,k]=el.dataset.ed.split("|");let v=el.value;
     if(el.type==="number")v=v===""?null:Number(v);else if(typeof v==="string"){v=v.trim();if(v==="")v=null;}
     if(col==="tasks")setTask(id,k,v);

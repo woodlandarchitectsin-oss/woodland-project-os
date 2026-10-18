@@ -24,7 +24,7 @@ var META_COLS = ['updatedAt', 'updatedBy', 'syncAt']; // updatedAt = when it was
 var JSON_FIELDS = { types: 1, conditions: 1, team: 1, confirm: 1, history: 1, siteIssues: 1, blocker: 1, decisions: 1, taskIds: 1, blocks: 1 };
 var NUM_FIELDS = { quotedFee: 1, agreedFee: 1, openingReceived: 1, est: 1, amount: 1, capacity: 1, duration: 1, buffer: 1, dailyControl: 1 };
 var BOOL_FIELDS = { clientDependency: 1, archived: 1 };
-var TEXT_COL = /^(id|projectId|created|completed|since|startAfter|waitingSince|nextMeeting|time)$|(date|due|deadline)$/i;
+var TEXT_COL = /^(id|projectId|created|completed|since|startAfter|waitingSince|nextMeeting|time|old|new|field)$|(date|due|deadline)$/i;
 var ADMIN_PROJECT_FIELDS = ['quotedFee', 'agreedFee', 'openingReceived', 'paymentMilestone', 'nextPaymentDue', 'paymentStatus', 'archived'];
 var OBLIGATIONS = ['PAYMENT PENDING', 'SNAGGING PENDING', 'DOCUMENTS PENDING', 'HANDOVER PENDING', 'WARRANTY ISSUE', 'FINAL PHOTOS PENDING'];
 
