@@ -337,7 +337,7 @@ function quickAdd(pid){
    ========================================================= */
 const TABS=[["today","Today","today"],["projects","Projects","projects"],["tasks","Tasks","tasks"],["money","Money","money"],["more","More","more",1],["follow","Follow-ups","follow",2],["meetings","Meetings","meetings",2],["team","Team","team",2],["weekly","Weekly review","weekly",2],["report","Daily report","report",2],["data","Data & settings","data",2]];
 const partialDate=v=>/^\d{1,6}-\d{2}-\d{2}$/.test(v||"")&&+String(v).split("-")[0]<1900;   // e.g. 0002-02-01 while the year is still being typed
-function isTyping(){const a=document.activeElement;if(!a)return false;if(a.tagName==="TEXTAREA")return true;if(a.tagName==="INPUT"&&a.type==="date"&&partialDate(a.value))return true;return a.tagName==="INPUT"&&["text","number","search"].includes(a.type)&&!a.dataset.live;}
+function isTyping(){const a=document.activeElement;if(!a)return false;if(a.tagName==="TEXTAREA")return true;if(a.tagName==="INPUT"&&a.type==="date"&&a.dataset.ed)return true; /* never redraw a date box while it has the cursor */return a.tagName==="INPUT"&&["text","number","search"].includes(a.type)&&!a.dataset.live;}
 function render(force){
   if(!force&&isTyping()){pendingRender=true;return;}
   pendingRender=false;
@@ -1069,15 +1069,30 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Enter"&&e.target.classList?.contains("card"))e.target.click();
   if(e.key==="Enter"&&e.target.matches?.("input.ed"))e.target.blur();
 });
-document.addEventListener("change",e=>{
-  const el=e.target;
-  if(el.dataset.ed){
-    if(el.type==="date"&&partialDate(el.value))return;   // wait until the whole year is typed
-    const [col,id,k]=el.dataset.ed.split("|");let v=el.value;
+let DT=null,DTel=null,DTv=null;
+function commitEd(el,dv){
+    const [col,id,k]=el.dataset.ed.split("|");let v=dv||el.value;
     if(el.type==="number")v=v===""?null:Number(v);else if(typeof v==="string"){v=v.trim();if(v==="")v=null;}
     if(col==="tasks")setTask(id,k,v);
     else if(col==="projects")setProject(id,k,v);
     else if(col==="people"){const p=clone(S.people[id]);const old=p[k];if(k==="name"&&!v){render(true);return;}p[k]=v;if(k==="name"&&old!==v)Object.values(S.tasks).filter(t=>t.assignee===old).forEach(t=>put("tasks",t.id,{...clone(t),assignee:v}));put("people",id,p);}
+
+}
+document.addEventListener("change",e=>{
+  const el=e.target;
+  if(el.dataset.ed){
+    if(el.type==="date"){
+      // Chrome reports every keystroke. The year is typed as its last digit(s): 5 -> 2025, 26 -> 2026; half-typed years wait,
+      // and the save happens when typing pauses (or the box is left), so history gets one line, not one per digit.
+      if(el.value===""&&document.activeElement===el&&!el.dataset.blur)return;   // Chrome empties the box while you overwrite a date
+      const m=/^(\d{1,6})-(\d{2})-(\d{2})$/.exec(el.value);let dv=null;
+      if(m&&+m[1]<100){const y=+m[1];dv=(y<10?2020+y:2000+y)+"-"+m[2]+"-"+m[3];}
+      else if(partialDate(el.value))return;
+      clearTimeout(DT);
+      if(el.dataset.blur){DTel=null;commitEd(el,dv);return;}
+      DTel=el;DTv=dv;DT=setTimeout(()=>{DTel=null;commitEd(el,dv);},700);return;
+    }
+    commitEd(el,null);
     return;
   }
   if(el.dataset.set){let v=el.value;if(el.type==="number")v=Number(v)||0;putSettings({[el.dataset.set]:v});toast("Saved");return;}
@@ -1094,7 +1109,7 @@ document.addEventListener("change",e=>{
 let qT=null;
 document.addEventListener("input",e=>{if(e.target.id==="nameInput")AUTH.draftName=e.target.value;if(e.target.id==="pinInput")AUTH.draftPin=e.target.value;if(e.target.id==="gsearch"){clearTimeout(qT);const v=e.target.value;qT=setTimeout(()=>{UI.gq=v;if(!v)UI.cmdOut=null;render(true);},250);}});
 document.addEventListener("toggle",e=>{const d=e.target;if(d&&d.dataset&&d.dataset.sec)UI.secs[d.dataset.sec]=d.open;},true);
-document.addEventListener("focusout",()=>{if(pendingRender)setTimeout(()=>{if(pendingRender&&!isTyping())render();},0);});
+document.addEventListener("focusout",e=>{const t=e.target;if(t&&t.type==="date"&&t.dataset&&t.dataset.ed){if(DTel===t){clearTimeout(DT);DTel=null;commitEd(t,DTv);}if(t.value===""){t.dataset.blur="1";t.dispatchEvent(new Event("change",{bubbles:true}));delete t.dataset.blur;}else{const q=t.dataset.ed.split("|");const cur=S[q[0]]&&S[q[0]][q[1]]?getPath(S[q[0]][q[1]],q[2]):null;if(cur&&t.value!==cur)t.value=cur;}}if(pendingRender)setTimeout(()=>{if(pendingRender&&!isTyping())render();},0);});
 document.addEventListener("submit",async e=>{
   e.preventDefault();const f=e.target;
   if(f.id==="modalForm"&&MODAL){const r=await MODAL.onSubmit(readModal());if(r!==false)closeModal();return;}
