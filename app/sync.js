@@ -12,6 +12,7 @@
   var outbox = [];                    // pending operations, oldest first
   var online = true, busy = false, timer = null, started = false, flushing = false;
   var lastNetToast = 0, backoff = 0, retryTimer = null;
+  var epoch = 0;                      // bumped on sign-out so a reply still in flight for the old person is ignored
 
   /* ---------- key-value store: IndexedDB, else localStorage ---------- */
   function openKV() {
@@ -191,9 +192,10 @@
     if (!meta.teamPin || busy) return Promise.resolve();
     if (offlineNow()) { online = false; status(); return Promise.resolve(); }
     busy = true;
-    var first = !lastSync;
+    var first = !lastSync, ep = epoch;
     var call = first ? api("loadAll", {}) : api("changesSince", { since: sinceStamp() });
     return call.then(function (res) {
+      if (ep !== epoch) return;                 // answer for someone who has since signed out
       busy = false;
       if (!res) return;
       if (!res.ok) { if (res.code === "BAD_PIN") h.authFailed(); else if (res.error) h.toast(res.error); return; }
@@ -201,16 +203,17 @@
       if (first) h.replaceAll(res.data, res.serverTime);
       else h.applyChanges(res.changes || {}, res.deleted || []);
       lastSync = res.serverTime; persistNow(); status();
-    }, function () { busy = false; netFail(); });
+    }, function () { if (ep !== epoch) return; busy = false; netFail(); });
   }
 
   function tick(force) {
-    if (!force && typeof document !== "undefined" && document.hidden) return;
+    if (!force && typeof document !== "undefined" && document.hidden) { if (outbox.length) flush(); return; }   // hidden tab: still send waiting edits, skip reading
     flush().then(function () { return pull(); }).then(status);
   }
 
   function start() {
-    if (started) return; started = true;
+    if (started) { tick(true); return; }   // signing in again on the same page: load straight away
+    started = true;
     timer = setInterval(function () { tick(false); }, POLL_MS);
     window.addEventListener("online", function () { online = true; backoff = 0; tick(true); });
     window.addEventListener("offline", function () { online = false; status(); });
@@ -245,6 +248,7 @@
     flush: flush,
     pull: pull,
     status: status,
+    signedOut: function () { epoch++; busy = false; flushing = false; lastSync = ""; clearTimeout(retryTimer); backoff = 0; return persistNow(); },
     resetSync: function () { lastSync = ""; return persistNow(); },
     dropOps: function (id) { outbox = outbox.filter(function (o) { return o.id !== id; }); saveOutbox(); status(); }
   };

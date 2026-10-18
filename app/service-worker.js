@@ -1,7 +1,7 @@
 /* Woodland Project OS — service worker.
    Caches the app shell so the app opens offline. VERSION is stamped by `npm run stamp` whenever the app files change,
    which makes browsers fetch the new shell and show "New version — tap to refresh". */
-const VERSION = "35c352deaa";
+const VERSION = "4fd8ecdfd6";
 const SHELL_CACHE = "wpos-shell-" + VERSION;
 const FONT_CACHE = "wpos-fonts";
 const SHELL = ["./", "index.html", "styles.css", "config.js", "sync.js", "app.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png"];

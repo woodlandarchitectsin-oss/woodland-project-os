@@ -41,7 +41,7 @@ const UI={view:"today",pv:"active",tv:"my",tperson:"",tproject:"",pfil:{lc:"",ty
 let pendingRender=false,lastView=null;
 
 /* ---- who is using this device ---- */
-const AUTH={need:"login",admin:false,user:"",err:"",busy:false};
+const AUTH={need:"login",admin:false,user:"",err:"",busy:false,draftName:"",draftPin:""};
 const me=()=>AUTH.user||owner();
 const isAdmin=()=>AUTH.admin;
 const planKey=()=>me()===owner()?today():today()+"~"+me();
@@ -950,11 +950,11 @@ function renderGate(){
   if(AUTH.need==="ok"){g.innerHTML="";g.hidden=true;gateKey="";return;}
   g.hidden=false;if(key===gateKey)return;gateKey=key;
   const last=(Sync.meta&&Sync.meta().user)||"";
-  g.innerHTML=`<form class="gatebox" id="loginForm"><div class="brand2"><b>WOODLAND</b><span>Project OS</span></div><h2>Sign in</h2><p class="hint">Type your name and your own PIN. Ask Ameen if you don't have one. You only do this once on this phone.</p><input type="text" id="nameInput" autocomplete="off" autocapitalize="words" placeholder="Your name" aria-label="Your name" value="${esc(last)}" ${AUTH.busy?"disabled":""}><input type="password" id="pinInput" inputmode="numeric" autocomplete="off" placeholder="Your PIN" aria-label="Your PIN" ${AUTH.busy?"disabled":""}>${AUTH.err?`<div class="banner" role="alert">${esc(AUTH.err)}</div>`:""}<button class="btn pri" ${AUTH.busy?"disabled":""}>${AUTH.busy?"Checking…":"Sign in"}</button></form>`;
-  const f=g.querySelector(last?"#pinInput":"#nameInput");if(f&&!f.disabled)setTimeout(()=>f.focus(),30);
+  g.innerHTML=`<form class="gatebox" id="loginForm"><div class="brand2"><b>WOODLAND</b><span>Project OS</span></div><h2>Sign in</h2><p class="hint">Type your name and your own PIN. Ask Ameen if you don't have one. You only do this once on this phone.</p><input type="text" id="nameInput" autocomplete="off" autocapitalize="words" placeholder="Your name" aria-label="Your name" value="${esc(AUTH.draftName||last)}" ${AUTH.busy?"disabled":""}><input type="password" id="pinInput" inputmode="numeric" autocomplete="off" placeholder="Your PIN" aria-label="Your PIN" value="${esc(AUTH.draftPin)}" ${AUTH.busy?"disabled":""}>${AUTH.err?`<div class="banner" role="alert">${esc(AUTH.err)}</div>`:""}<button class="btn pri" ${AUTH.busy?"disabled":""}>${AUTH.busy?"Checking…":"Sign in"}</button></form>`;
+  const f=g.querySelector((AUTH.draftName||last)?"#pinInput":"#nameInput");if(f&&!f.disabled)setTimeout(()=>f.focus(),30);
 }
 async function submitLogin(name,pin){
-  name=String(name||"").trim();pin=String(pin||"").trim();
+  name=String(name||"").trim();pin=String(pin||"").trim();AUTH.draftName=name;
   if(!name||!pin){AUTH.err="Type your name and your PIN.";gateKey="";renderGate();return;}
   if(!window.WPOS_CONFIG||!window.WPOS_CONFIG.API_URL){AUTH.err="This app is not connected to its server yet.";gateKey="";renderGate();return;}
   AUTH.busy=true;AUTH.err="";renderGate();
@@ -963,14 +963,14 @@ async function submitLogin(name,pin){
     AUTH.busy=false;
     if(r&&r.ok){
       await Sync.setMeta({teamPin:pin,adminPin:r.admin?pin:"",user:r.name||name});
-      AUTH.user=r.name||name;AUTH.admin=!!r.admin;AUTH.need="ok";AUTH.err="";
+      AUTH.user=r.name||name;AUTH.admin=!!r.admin;AUTH.need="ok";AUTH.err="";AUTH.draftName="";AUTH.draftPin="";
       render(true);Sync.start();
-    }else{AUTH.err=(r&&r.error)||"That name and PIN were not accepted.";gateKey="";renderGate();}
+    }else{AUTH.draftPin="";AUTH.err=(r&&r.error)||"That name and PIN were not accepted.";gateKey="";renderGate();}
   }catch(e){AUTH.busy=false;AUTH.err="Couldn't reach the server. Check the internet.";gateKey="";renderGate();}
 }
 async function signOut(){
   if(Sync.outbox().length){toast("Wait until your changes are saved ("+Sync.outbox().length+" waiting), then sign out.");return;}
-  await Sync.setMeta({teamPin:"",adminPin:"",user:""});await Sync.resetSync();
+  await Sync.setMeta({teamPin:"",adminPin:"",user:""});await Sync.signedOut();
   COLS.forEach(c=>{S[c]={};});S.loaded=false;Sync.saveState();
   AUTH.user="";AUTH.admin=false;AUTH.need="login";AUTH.err="";gateKey="";render(true);
 }
@@ -1092,7 +1092,7 @@ document.addEventListener("change",e=>{
   if(el.id==="starterFile"&&el.files[0]){importFile(el.files[0],true);el.value="";}
 });
 let qT=null;
-document.addEventListener("input",e=>{if(e.target.id==="gsearch"){clearTimeout(qT);const v=e.target.value;qT=setTimeout(()=>{UI.gq=v;if(!v)UI.cmdOut=null;render(true);},250);}});
+document.addEventListener("input",e=>{if(e.target.id==="nameInput")AUTH.draftName=e.target.value;if(e.target.id==="pinInput")AUTH.draftPin=e.target.value;if(e.target.id==="gsearch"){clearTimeout(qT);const v=e.target.value;qT=setTimeout(()=>{UI.gq=v;if(!v)UI.cmdOut=null;render(true);},250);}});
 document.addEventListener("toggle",e=>{const d=e.target;if(d&&d.dataset&&d.dataset.sec)UI.secs[d.dataset.sec]=d.open;},true);
 document.addEventListener("focusout",()=>{if(pendingRender)setTimeout(()=>{if(pendingRender&&!isTyping())render();},0);});
 document.addEventListener("submit",async e=>{

@@ -32,7 +32,7 @@ test("sign-in with name + own PIN: wrong PIN, someone else's name, then in; no r
     await tryLogin("Shafeeq", "7305");                         // Mazin's PIN does not work for Shafeeq
     await tryLogin("Nobody", "4821");
     await page.fill("#nameInput", "shafeeq"); await page.fill("#pinInput", "4821"); await page.click("#loginForm button");
-    await page.waitForFunction(() => S.loaded && Object.keys(S.projects).length === 1);
+    try { await page.waitForFunction(() => S.loaded && Object.keys(S.projects).length === 1, null, { timeout: 8000 }); } catch (e) { console.log("DIAG", JSON.stringify(await page.evaluate(() => ({ loaded: S.loaded, n: Object.keys(S.projects).length, need: AUTH.need, err: AUTH.err, busy: AUTH.busy, out: Sync.outbox().length, name: (document.getElementById("nameInput")||{}).value }))), JSON.stringify(h.state.calls)); throw e; }
     assert.equal(await page.evaluate(() => AUTH.user), "Shafeeq");            // stored with the proper spelling
     assert.equal(await page.evaluate(() => AUTH.admin), false);
     assert.match(await page.textContent("#main"), /Deralakatte Villa/);
