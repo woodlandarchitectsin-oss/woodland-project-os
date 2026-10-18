@@ -1,0 +1,6 @@
+node_modules/
+private/
+test/screenshots/
+backend/.clasp.json
+.clasprc.json
+*.log
