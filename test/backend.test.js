@@ -235,3 +235,31 @@ test("import: records whose id starts with NEW get the next free numbers, nothin
   assert.equal(all["WA-001"].client, "Keep me"); assert.equal(all["WA-003"].name, "Fresh A"); assert.deepEqual(all["WA-004"].types, ["Interior"]);
   assert.equal(g.call("create", A, "Ameen", { collection: "projects", id: "t", fields: { name: "Next" } }).id, "WA-005");
 });
+
+test("registry feed: needs the link key, lists only non-archived projects, never leaks money or notes", () => {
+  const g = mk();
+  const reg = (key) => JSON.parse(g.sandbox.doPost({ postData: { contents: JSON.stringify({ action: "registry", key }) } }).getContent());
+  assert.equal(reg("x").code, "NOT_SET_UP");
+  g.sandbox.setLinkKey();
+  const key = g.store.props.LINK_KEY;
+  assert.match(key, /^[0-9a-f]{64}$/);
+  g.sandbox.setLinkKey();
+  assert.equal(g.store.props.LINK_KEY, key);               // never replaced once set
+  assert.equal(reg("").code, "BAD_KEY");
+  assert.equal(reg("wrong").code, "BAD_KEY");
+  assert.equal(reg(A).code, "BAD_KEY");                     // the admin PIN is not a link key
+  const mkp = (f) => g.call("create", A, "Ameen", { collection: "projects", id: "t", fields: f });
+  const a = mkp({ name: "Site job", client: "C1", location: "Kadri", lifecycle: "EXECUTION / SITE", startDate: "2026-09-01", targetDate: "2026-12-20", agreedFee: 500000, notes: "secret note" });
+  mkp({ name: "Enquiry only", lifecycle: "ENQUIRY" });
+  mkp({ name: "Design job", lifecycle: "CONCEPT DESIGN" });
+  const gone = mkp({ name: "Archived job", lifecycle: "EXECUTION / SITE" });
+  g.call("archive", A, "Ameen", { collection: "projects", id: gone.id });
+  const r = reg(key);
+  assert.ok(r.ok);
+  assert.deepEqual(r.projects.map((p) => p.name).sort(), ["Design job", "Enquiry only", "Site job"]);
+  const site = r.projects.find((p) => p.name === "Site job");
+  assert.deepEqual(site, { id: site.id, name: "Site job", client: "C1", location: "Kadri", lifecycle: "EXECUTION / SITE", group: "exec", active: true, startDate: "2026-09-01", targetDate: "2026-12-20" });
+  assert.equal(r.projects.find((p) => p.name === "Enquiry only").active, false);
+  assert.equal(r.projects.find((p) => p.name === "Design job").active, true);
+  assert.ok(!JSON.stringify(r).includes("secret note") && !JSON.stringify(r).includes("500000"));
+});

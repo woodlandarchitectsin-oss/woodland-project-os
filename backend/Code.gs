@@ -26,6 +26,7 @@ var NUM_FIELDS = { quotedFee: 1, agreedFee: 1, openingReceived: 1, est: 1, amoun
 var BOOL_FIELDS = { clientDependency: 1, archived: 1 };
 var TEXT_COL = /^(id|projectId|created|completed|since|startAfter|waitingSince|nextMeeting|time|old|new|field)$|(date|due|deadline)$/i;
 var ADMIN_PROJECT_FIELDS = ['quotedFee', 'agreedFee', 'openingReceived', 'paymentMilestone', 'nextPaymentDue', 'paymentStatus', 'archived'];
+var LC_GROUP = { 'ENQUIRY': 'enq', 'QUALIFICATION': 'enq', 'PROPOSAL / QUOTATION': 'enq', 'WON': 'design', 'PRE-DESIGN': 'design', 'CONCEPT DESIGN': 'design', 'DESIGN DEVELOPMENT': 'design', 'CLIENT APPROVAL': 'design', 'WORKING DRAWINGS': 'design', 'TENDER / BOQ': 'exec', 'EXECUTION / SITE': 'exec', 'COMPLETION': 'snag', 'SNAGGING': 'snag', 'CLOSED': 'closed', 'ON HOLD': 'hold', 'LOST / CANCELLED': 'lost', 'UNKNOWN — CONFIRM': 'unk' }; // same table as app/app.js; a project is 'in process' when its group is design, exec or snag
 var OBLIGATIONS = ['PAYMENT PENDING', 'SNAGGING PENDING', 'DOCUMENTS PENDING', 'HANDOVER PENDING', 'WARRANTY ISSUE', 'FINAL PHOTOS PENDING'];
 
 /* ---------------- entry points ---------------- */
@@ -34,6 +35,7 @@ function doPost(e) {
   var t0 = new Date();
   var req;
   try { req = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, code: 'BAD_REQUEST', error: 'Unreadable request.' }); }
+  if (req.action === 'registry') return out_(registryFeed_(req.key)); // read-only project list for the Gantt and Site Accounts apps; own key, no PIN
   try {
     var who = authenticate_(req.pin, req.by);
     if (who === 'locked') return out_({ ok: false, code: 'BAD_PIN', error: 'Too many wrong attempts. Try again in 10 minutes.' });
@@ -68,6 +70,39 @@ function setPins() {
   var made = [];
   if (!props.getProperty('ADMIN_PIN')) { props.setProperty('ADMIN_PIN', rndDigits_(6)); made.push('ADMIN_PIN'); }
   Logger.log('Created: ' + (made.join(', ') || 'nothing (ADMIN_PIN already set)') + '. Read or change it in Project Settings > Script Properties.');
+}
+
+/** Run once from the editor. Creates LINK_KEY (the shared secret the Gantt and Site Accounts apps use to read the project list). Read it in Project Settings > Script Properties, then paste the same value into the other two apps. */
+function setLinkKey() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('LINK_KEY')) { Logger.log('LINK_KEY already set. Read it in Project Settings > Script Properties.'); return; }
+  var k = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  props.setProperty('LINK_KEY', k);
+  Logger.log('LINK_KEY created. Read it in Project Settings > Script Properties.');
+}
+
+/** The project list other Woodland apps may read. Never includes fees, payments, notes or contacts. */
+function registryFeed_(key) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var want = props.getProperty('LINK_KEY');
+    if (!want) return { ok: false, code: 'NOT_SET_UP', error: 'LINK_KEY is not set. Run setLinkKey() in the Apps Script editor.' };
+    var cache = CacheService.getScriptCache();
+    var fails = Number(cache.get('linkfails') || 0);
+    if (fails >= 30) return { ok: false, code: 'BAD_KEY', error: 'Too many wrong keys. Try again in 10 minutes.' };
+    key = String(key == null ? '' : key);
+    var diff = key.length === want.length ? 0 : 1;
+    for (var i = 0; i < want.length; i++) diff |= (key.charCodeAt(i) || 0) ^ want.charCodeAt(i);
+    if (diff) { cache.put('linkfails', String(fails + 1), 600); return { ok: false, code: 'BAD_KEY', error: 'Wrong link key.' }; }
+    ss_();
+    var list = read_('projects').rows.map(function (r) { return r.obj; }).filter(function (p) { return p.id && !p.archived; }).map(function (p) {
+      var g = LC_GROUP[p.lifecycle] || 'unk';
+      return { id: p.id, name: String(p.name || ''), client: String(p.client || ''), location: String(p.location || ''), lifecycle: p.lifecycle || '', group: g, active: g === 'design' || g === 'exec' || g === 'snag', startDate: p.startDate || '', targetDate: p.targetDate || '' };
+    });
+    return { ok: true, serverTime: new Date().toISOString(), projects: list };
+  } catch (err) {
+    return { ok: false, code: 'SERVER_ERROR', error: 'Server error: ' + (err && err.message ? err.message : err) };
+  }
 }
 
 function rndDigits_(n) { var s = ''; for (var i = 0; i < n; i++) s += Math.floor(Math.random() * 10); return s; }

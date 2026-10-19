@@ -88,6 +88,7 @@ function createGas(opts = {}) {
       createTextOutput: (t) => ({ text: t, setMimeType() { return this; }, getContent() { return t; } })
     },
     Utilities: {
+      getUuid: () => require("crypto").randomUUID(),
       formatDate: (d, tz, f) => d.toISOString().slice(0, 10),
       DigestAlgorithm: { SHA_256: "sha256" },
       // Apps Script returns signed bytes

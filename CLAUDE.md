@@ -37,3 +37,8 @@ clasp deploy --deploymentId AKfycbxR4m5jgaS7zMm0f_L6H2Tw3SBrNpQjl_mdrc8g_xr3TfnZ
 - Repo: https://github.com/woodlandarchitectsin-oss/woodland-project-os (public, code only)
 - App link: https://woodlandarchitectsin-oss.github.io/woodland-project-os/ (served from the gh-pages branch)
 - Hand-over text for Ameen: docs/HANDOVER.md
+
+## Link to the other two apps (Gantt + Site Accounts)
+- Project OS is the master list. The `registry` action (in `backend/Code.gs`) returns every non-archived project's id, name, client, location, stage, active flag and start/target dates. It never returns fees, payments, notes or contacts.
+- It is protected by its own secret `LINK_KEY` (Script Properties), not by PINs. Run `setLinkKey()` once in the Apps Script editor to create it; the same value is pasted into Site Accounts (Script Property `LINK_KEY`) and the Gantt (`data/project-os-link.json`). Never write the key in code, tests, docs or Git.
+- 'In process' = stage group design, exec or snag (same as the app's own Active view: WON ... SNAGGING). Enquiries, on hold, closed, lost and unknown are not shared.

@@ -4,7 +4,7 @@
   "description": "Woodland Architects — shared projects, tasks and money.",
   "start_url": "./",
   "scope": "./",
-  "id": "./",
+  "id": "/woodland-project-os/",
   "display": "standalone",
   "orientation": "any",
   "theme_color": "#2c5a47",
