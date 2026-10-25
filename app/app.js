@@ -39,6 +39,9 @@ let MODE="connecting",readOnly=false,CAP={sample:null,downloads:null};
 
 const UI={view:"today",pv:"active",tv:"my",tperson:"",tproject:"",pfil:{lc:"",type:"",person:"",pri:"",pay:""},showFilters:false,sortP:"priority",open:null,cmdOut:null,planOverride:null,gq:"",qaProject:"",qaAssignee:null,secs:{}};
 let pendingRender=false,lastView=null;
+let pressing=false;   /* a finger/mouse is down: never redraw under it, or the tap is lost */
+document.addEventListener("pointerdown",()=>{pressing=true;},true);
+["pointerup","pointercancel"].forEach(ev=>document.addEventListener(ev,()=>{pressing=false;setTimeout(()=>{if(pendingRender&&!pressing&&!isTyping())render();},0);},true));
 
 /* ---- who is using this device ---- */
 const AUTH={need:"login",admin:false,user:"",err:"",busy:false,draftName:"",draftPin:""};
@@ -1109,7 +1112,7 @@ document.addEventListener("change",e=>{
 let qT=null;
 document.addEventListener("input",e=>{if(e.target.id==="nameInput")AUTH.draftName=e.target.value;if(e.target.id==="pinInput")AUTH.draftPin=e.target.value;if(e.target.id==="gsearch"){clearTimeout(qT);const v=e.target.value;qT=setTimeout(()=>{UI.gq=v;if(!v)UI.cmdOut=null;render(true);},250);}});
 document.addEventListener("toggle",e=>{const d=e.target;if(d&&d.dataset&&d.dataset.sec)UI.secs[d.dataset.sec]=d.open;},true);
-document.addEventListener("focusout",e=>{const t=e.target;if(t&&t.type==="date"&&t.dataset&&t.dataset.ed){if(DTel===t){clearTimeout(DT);DTel=null;commitEd(t,DTv);}if(t.value===""){t.dataset.blur="1";t.dispatchEvent(new Event("change",{bubbles:true}));delete t.dataset.blur;}else{const q=t.dataset.ed.split("|");const cur=S[q[0]]&&S[q[0]][q[1]]?getPath(S[q[0]][q[1]],q[2]):null;if(cur&&t.value!==cur)t.value=cur;}}if(pendingRender)setTimeout(()=>{if(pendingRender&&!isTyping())render();},0);});
+document.addEventListener("focusout",e=>{const t=e.target;if(t&&t.type==="date"&&t.dataset&&t.dataset.ed){if(DTel===t){clearTimeout(DT);DTel=null;commitEd(t,DTv);}if(t.value===""){t.dataset.blur="1";t.dispatchEvent(new Event("change",{bubbles:true}));delete t.dataset.blur;}else{const q=t.dataset.ed.split("|");const cur=S[q[0]]&&S[q[0]][q[1]]?getPath(S[q[0]][q[1]],q[2]):null;if(cur&&t.value!==cur)t.value=cur;}}if(pendingRender)setTimeout(()=>{if(pendingRender&&!pressing&&!isTyping())render();},0);});
 document.addEventListener("submit",async e=>{
   e.preventDefault();const f=e.target;
   if(f.id==="modalForm"&&MODAL){const r=await MODAL.onSubmit(readModal());if(r!==false)closeModal();return;}
